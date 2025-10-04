@@ -5,3 +5,4 @@ bcrypt
 asyncpg
 pydantic
 pydantic[email]
+uvicorn
