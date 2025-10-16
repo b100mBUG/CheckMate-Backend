@@ -5,15 +5,15 @@ from backend.api.schemas.account import AccountIn, AccountLogin, AccountOut, Acc
 router = APIRouter()
 
 @router.get("/accounts-fetch/", response_model=list[AccountOut])
-async def fetch_accounts(sort_term: str, sort_dir: str):
-    accounts = await show_accounts(sort_term, sort_dir)
+async def fetch_accounts(company_id: int, sort_term: str, sort_dir: str):
+    accounts = await show_accounts(company_id, sort_term, sort_dir)
     if not accounts:
         raise HTTPException(status_code=404, detail="Accounts not found")
     return accounts
 
 @router.get("/accounts-search/", response_model=list[AccountOut])
-async def find_accounts(search_term: str):
-    accounts = await search_accounts(search_term)
+async def find_accounts(company_id: int, search_term: str):
+    accounts = await search_accounts(company_id, search_term)
     if not accounts:
         raise HTTPException(status_code=404, detail="Accounts not found")
     return accounts
