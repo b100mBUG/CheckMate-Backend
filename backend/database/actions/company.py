@@ -48,6 +48,17 @@ async def show_companies(sort_term, sort_dir):
         companies = result.scalars().all()
         return companies
 
+async def get_company_by_id(company_id: int):
+    async with async_session.begin() as session:
+        stmt = select(Company).where(
+            Company.company_id == company_id
+        )
+        result = await session.execute(stmt)
+        company = result.scalars().first()
+        if not company:
+            return None
+        return company
+
 async def search_companies(search_term: str):
     async with async_session.begin() as session:
         stmt = select(Company).where(
