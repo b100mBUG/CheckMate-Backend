@@ -1,22 +1,194 @@
-from backend.database.actions.salesman import add_salesman, edit_salesman, delete_salesman, activate_salesman, show_salesmen, search_salesmen, deactivate_salesman, signin
+from backend.database.actions.salesman import (
+    add_salesman, edit_salesman, delete_salesman, 
+    activate_salesman, show_salesmen, search_salesmen, 
+    deactivate_salesman, signin
+)
+from backend.database.actions.sales import generate_salesman_sales
+from backend.database.actions.company import get_company_by_id
 from fastapi import APIRouter, HTTPException
 from backend.api.schemas.salesman import SalesmanIn, SalesmanLogin, SalesmanOut, SalesmanEdit
+from fastapi.responses import FileResponse
+from datetime import datetime
+import csv
+from reportlab.platypus import (
+    SimpleDocTemplate, Table, TableStyle, 
+    Paragraph, Spacer, Image,
+)
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import cm
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+import os
 
 router = APIRouter()
 
+EXPORT_DIR = "exports"
+os.makedirs(EXPORT_DIR, exist_ok=True)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
+logo_path = os.path.join(BASE_DIR, "check.png")
+print("Logo path:", logo_path)
+print("Exists:", os.path.exists(logo_path))
+
 @router.get("/salesman-fetch/", response_model=list[SalesmanOut])
-async def fetch_salesmen(sort_term: str, sort_dir: str):
-    salesmen = await show_salesmen(sort_term, sort_dir)
+async def fetch_salesmen(company_id: int, sort_term: str, sort_dir: str):
+    salesmen = await show_salesmen(company_id, sort_term, sort_dir)
     if not salesmen:
         raise HTTPException(status_code=404, detail="salesmen not found")
     return salesmen
 
+@router.get("/salesman-fetch-sales/")
+async def fetch_salesmen_sales(company_id: int, salesman_id: int, filter):
+    sales = await generate_salesman_sales(company_id, salesman_id, filter)
+    if not sales:
+        raise HTTPException(status_code=404, detail="Sales not found")
+    return sales
+
 @router.get("/salesman-search/", response_model=list[SalesmanOut])
-async def find_salesmen(search_term: str):
-    salesmen = await search_salesmen(search_term)
+async def find_salesmen(company_id: int, search_term: str):
+    salesmen = await search_salesmen(company_id, search_term)
     if not salesmen:
         raise HTTPException(status_code=404, detail="salesmen not found")
     return salesmen
+
+@router.get("/salesman-export-pdf")
+async def fetch_export_product_pdf(company_id: int, filter_term: str):
+    salesmen = await show_salesmen(company_id, filter_term, "desc")
+    if not salesmen:
+        raise HTTPException(status_code=404, detail="Order PDF not found")
+
+    company = await get_company_by_id(company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    
+    filename = f"{company.company_name}_salesmen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    path = os.path.join(EXPORT_DIR, filename)
+
+    doc = SimpleDocTemplate(
+        path, 
+        pagesize=A4,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=40,
+        bottomMargin=30
+    )
+    
+    styles = getSampleStyleSheet()
+    elements = []
+    
+
+    report_title = f"{filter_term.capitalize()} Salesmen Report"
+    custom_title = ParagraphStyle(
+        'custom_title',
+        parent=styles['Title'],
+        alignment=1,
+        fontSize=16,
+        spaceAfter=10
+    )
+    
+
+    if os.path.exists(logo_path):
+        logo = Image(logo_path, width=80, height=80)
+        logo.hAlign = 'CENTER'
+        elements.append(logo)
+        elements.append(Spacer(1, 6))
+    
+
+    company_info = f"""
+        <b>{company.company_name}</b><br/>
+        {company.company_email} | {company.company_contact}<br/>
+        Date: {datetime.today().strftime("%B %d, %Y")}
+    """
+    elements.append(Paragraph(company_info, styles["Normal"]))
+    elements.append(Spacer(1, 20))
+    
+    elements.append(Paragraph(report_title, custom_title))
+    elements.append(Spacer(1, 12))
+    
+
+    data = [
+        [
+            "Salesman", "Email", "Contact", "Status", 
+            "Date Added"
+        ]
+    ]
+    for s in salesmen:
+        data.append([
+            Paragraph(s.salesman_name or "", styles["Normal"]),
+            Paragraph(s.salesman_email or "", styles["Normal"]),
+            str(s.salesman_contact),
+            Paragraph(s.salesman_status or "", styles["Normal"]),
+            str(s.date_added)
+        ])
+    
+    col_widths = [
+        3.5*cm, 3.5*cm, 3.5*cm, 3.5*cm, 
+        3.0*cm
+    ]
+    
+    table = Table(data, colWidths=col_widths, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#54B108")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('GRID', (0,0), (-1,-1), 0.4, colors.grey),
+        ('BACKGROUND', (0,1), (-1,-1), colors.whitesmoke),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.whitesmoke, colors.lightgrey]),
+    ]))
+    
+    elements.append(table)
+    elements.append(Spacer(1, 20))
+    
+
+    signature = """
+        <br/><br/><br/>
+        ___________________________<br/>
+        <b>Authorized Signature</b><br/>
+        Generated by CheckMate Admin
+    """
+    elements.append(Paragraph(signature, styles["Normal"]))
+    
+    doc.build(elements)
+
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=filename
+    )
+
+
+@router.get("/orders-export-csv")
+async def fetch_export_order_csv(company_id: int, filter_term: str):
+    salesmen = await show_salesmen(company_id, filter_term, "desc")
+    if not salesmen:
+        raise HTTPException(status_code=404, detail="No orders found")
+
+    company = await get_company_by_id(company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    filename = f"{company.company_name}_salesmen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    path = os.path.join(EXPORT_DIR, filename)
+
+    with open(path, mode="w", encoding="utf-8", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            "Salesman", "Email", "Contact", "Status",
+            "Date Added"
+        ])
+        for s in salesmen:
+            writer.writerow([
+                s.salesman_name, s.salesman_email, s.salesman_contact, 
+                s.salesman_status, str(s.date_added)
+            ])
+
+    return FileResponse(
+        path,
+        media_type="text/csv",
+        filename=filename
+    )
 
 @router.post("/salesman-create/", response_model=SalesmanOut)
 async def create_salesman(detail: SalesmanIn):
@@ -43,9 +215,9 @@ async def login_account(detail: SalesmanLogin):
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
 
 @router.put("/salesman-activate/")
-async def make_active(salesman_id: int):
+async def make_active(company_id: int, salesman_id: int):
     try:
-        salesman = await activate_salesman(salesman_id)
+        salesman = await activate_salesman(company_id, salesman_id)
         if not salesman:
             raise HTTPException(status_code=404, detail="salesman not found")
         return salesman
@@ -53,19 +225,19 @@ async def make_active(salesman_id: int):
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
 
 @router.put("/salesman-deactivate/")
-async def make_inactive(salesman_id: int):
+async def make_inactive(company_id: int, salesman_id: int):
     try:
-        salesman = await deactivate_salesman(salesman_id)
+        salesman = await deactivate_salesman(company_id, salesman_id)
         if not salesman:
             raise HTTPException(status_code=404, detail="salesman not found")
         return salesman
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
 
-@router.put("/salesman-edit/")
-async def format_salesman(salesman_id: int, detail: SalesmanEdit):
+@router.put("/salesman-edit/", response_model=SalesmanOut)
+async def format_salesman(company_id: int, salesman_id: int, detail: SalesmanEdit):
     try:
-        salesman = await edit_salesman(salesman_id, detail.model_dump())
+        salesman = await edit_salesman(company_id, salesman_id, detail.model_dump())
         if not salesman:
             raise HTTPException(status_code=404, detail="salesman not found")
         return salesman
@@ -73,9 +245,9 @@ async def format_salesman(salesman_id: int, detail: SalesmanEdit):
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
 
 @router.delete("/salesman-delete/")
-async def remove_salesman(salesman_id: int):
+async def remove_salesman(company_id: int, salesman_id: int):
     try:
-        await delete_salesman(salesman_id)
+        await delete_salesman(company_id, salesman_id)
         return {"message": "salesman deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
