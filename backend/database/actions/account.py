@@ -31,40 +31,45 @@ async def signin(account_detail: dict):
             return None
         return account
 
-async def show_accounts(sort_term: str, sort_dir: str):
+async def show_accounts(company_id: int, sort_term: str, sort_dir: str):
     async with async_session.begin() as session:
         if sort_term == "all":
-            stmt = select(Account)
+            stmt = select(Account).where(Account.company_id == company_id)
         elif sort_term == "name":
             if sort_dir == "desc":
                 stmt = (
                     select(Account)
+                    .where(Account.company_id == company_id)
                     .order_by(Account.account_name.desc())
                 )
             elif sort_dir == "asc":
                 stmt = (
                     select(Account)
+                    .where(Account.company_id == company_id)
                     .order_by(Account.account_name.asc())
                 )
         elif sort_term == "date":
             if sort_dir == "desc":
                 stmt = (
                     select(Account)
+                    .where(Account.company_id == company_id)
                     .order_by(Account.date_added.desc())
                 )
             if sort_dir == "asc":
                 stmt = (
                     select(Account)
+                    .where(Account.company_id == company_id)
                     .order_by(Account.date_added.asc())
                 )
         result = await session.execute(stmt)
         accounts = result.scalars().all()
         return accounts
 
-async def search_accounts(search_term: str):
+async def search_accounts(company_id: int, search_term: str):
     async with async_session.begin() as session:
         stmt = select(Account).where(
-            Account.account_name.ilike(f"%{search_term}%")
+            (Account.account_name.ilike(f"%{search_term}%")) &
+            (Account.company_id == company_id)
         )
         result = await session.execute(stmt)
         accounts = result.scalars().all()
