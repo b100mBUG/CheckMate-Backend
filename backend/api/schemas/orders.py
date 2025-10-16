@@ -4,6 +4,7 @@ from datetime import date
 
 class OrderIn(BaseModel):
     salesman_id : int
+    company_id: int
     order_name : str
     order_detail : str
     order_quantity : int
@@ -21,6 +22,7 @@ class OrderIn(BaseModel):
 class OrderOut(BaseModel):
     order_id: int
     salesman_id : int
+    company_id: int
     order_name : str
     order_detail : str
     order_quantity : int
